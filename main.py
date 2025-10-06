@@ -47,6 +47,33 @@ async def main():
             ]
             st.session_state.new_chat = True
         
+        st.title("Upload to RAG")
+        upload_file = st.file_uploader("Upload a pdf", type="pdf")
+        description = st.text_input("Description")
+        if st.button("Upload"):
+            if not upload_file:
+                st.sidebar.error("Please upload a PDF file.")
+            elif not description:
+                st.sidebar.error("Description is required.")
+            else:
+                with st.spinner("⏳ Uploading file..."):
+                    try:
+                        # Prepare files and data
+                        files = {"file": (upload_file.name, upload_file, "application/pdf")}
+                        data = {"description": description}
+
+                        # Send POST request
+                        with httpx.Client(timeout=httpx.Timeout(200)) as client:
+                            response = client.post("http://localhost:8000/upload", files=files, data=data)
+
+                        # Show response
+                        if response.status_code == 200:
+                            st.sidebar.success("✅ File uploaded successfully!")
+                        else:
+                            st.sidebar.error(f"❌ Upload failed: {response.status_code}")
+
+                    except Exception as e:
+                        st.sidebar.error(f"⚠️ Error: {e}")
         st.title("Chats")
     
         threads = await get_distinct_thread_ids()
