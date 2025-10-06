@@ -2,6 +2,7 @@ import streamlit as st
 import uuid
 import asyncio
 import httpx
+from langchain.load import loads
 
 from langchain_core.messages import HumanMessage, AIMessage, messages_from_dict
 
@@ -103,15 +104,66 @@ async def main():
         st.session_state.messages.append(HumanMessage(content=prompt))
         st.chat_message("user").write(prompt)
         with st.chat_message("assistant"):
-                result = await connect_to_backend(
-                    url = "http://127.0.0.1:8000/invoke",
-                    json_payload={
-                        "thread_id": st.session_state.thread_id,
-                        "input": prompt
-                    }
-                )
-                st.session_state.messages.append(AIMessage(content = result["text"]))
-                st.write(result["text"])
+                container = st.container()  # This container will hold the dynamic Streamlit UI components
+                thoughts_placeholder = container.container()
+                to_do_placeholder = thoughts_placeholder.empty()  # Container for displaying status messages
+                token_placeholder = container.empty()  # Placeholder for displaying progressive token updates
+                final_text = ""  # Will store the accumulated text from the model's response
+                async with httpx.AsyncClient(timeout=None) as client:
+                    async with client.stream("POST", 
+                        "http://localhost:8000/stream", 
+                        json={
+                         "thread_id": st.session_state.thread_id,
+                            "input": prompt
+                        }
+                    ) as response:
+                        async for event in response.aiter_lines():
+                            if not event :
+                               continue
+                            try: 
+                                event = loads(event)
+                                kind = event["event"]  # Determine the type of event received
+                                if kind == "on_chat_model_stream":
+                                    # The event corresponding to a stream of new content (tokens or chunks of text)
+                                    addition = event["data"]["chunk"].content  # Extract the new content chunk
+                                    final_text += addition  # Append the new content to the accumulated text
+                                    if addition:
+                                        token_placeholder.write(final_text)  # Update the st placeholder with the progressive response
+
+                                elif kind == "on_tool_start":
+                                    # The event signals that a tool is about to be called
+                                    with thoughts_placeholder:
+                                        print(f"*****{event['name']}*****")
+                                        status_placeholder = st.empty()  # Placeholder to show the tool's status
+                                        with status_placeholder.status("Calling Tool...", expanded=True) as s:
+                                            st.write("Called ", event['name'])  # Show which tool is being called
+                                            st.write("Tool input: ")
+                                            st.code(event['data'].get('input'))  # Display the input data sent to the tool
+                                            st.write("Tool output: ")
+                                            output_placeholder = st.empty()  # Placeholder for tool output that will be updated later below
+                                            s.update(label="Completed Calling Tool!", expanded=False)  # Update the status once done
+
+                                elif kind == "on_tool_end":
+                                    # The event signals the completion of a tool's execution
+                                    print(f"*****{event['name']}*****")
+                                    with thoughts_placeholder:
+                                        # We assume that `on_tool_end` comes after `on_tool_start`, meaning output_placeholder exists
+                                        if 'output_placeholder' in locals():
+                                            output_placeholder.code(event['data'].get('output').content)  # Display the tool's output
+                                elif kind == "on_custom_event":
+                                    if event["name"] == "on_todo_update":
+                                        with to_do_placeholder.status('TO-DO', expanded=True):
+                                            todos = event['data']['todo']
+                                            for task in todos:
+                                                if task["status"] == "pending":
+                                                    st.markdown(f"- [ ] {task['content']}")
+                                                elif task["status"] == "in_progress":
+                                                    st.markdown(f"🔄 **{task['content']}**")
+                                                elif task["status"] == "completed":
+                                                    st.markdown(f"- [x] ~~{task['content']}~~")
+                            except Exception as e:
+                                print(e)
+                st.session_state.messages.append(AIMessage(content=final_text))           
     
 if __name__ == "__main__":
     asyncio.run(main())
