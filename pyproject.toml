@@ -7,6 +7,8 @@ requires-python = ">=3.11"
 dependencies = [
     "aiosqlite>=0.21.0",
     "langchain>=0.3.27",
+    "nest-asyncio>=1.6.0",
     "sseclient>=0.0.27",
+    "streamlit-oauth>=0.1.14",
     "streamlit>=1.50.0",
 ]

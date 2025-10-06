@@ -3,11 +3,18 @@ import uuid
 import asyncio
 import httpx
 from langchain.load import loads
-
+from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, messages_from_dict
 
 from sqlite_db import get_distinct_thread_ids, add_thread_to_db, create_thread_db
+import config as cfg
+import json
+from streamlit_oauth import OAuth2Component
+load_dotenv()
+import os
+import nest_asyncio
 
+nest_asyncio.apply()
 
 async def connect_to_backend(
     url, 
@@ -46,46 +53,95 @@ async def main():
                 AIMessage(content="Hello, How Can I help You Today!!")
             ]
             st.session_state.new_chat = True
-        
-        st.title("Upload to RAG")
-        upload_file = st.file_uploader("Upload a pdf", type="pdf")
-        description = st.text_input("Description")
-        if st.button("Upload"):
-            if not upload_file:
-                st.sidebar.error("Please upload a PDF file.")
-            elif not description:
-                st.sidebar.error("Description is required.")
-            else:
-                with st.spinner("⏳ Uploading file..."):
-                    try:
-                        # Prepare files and data
-                        files = {"file": (upload_file.name, upload_file, "application/pdf")}
-                        data = {"description": description}
+        st.title("Uploader:")
+        with st.expander("Upload a PDF", expanded=True):
+            upload_file = st.file_uploader("Upload a pdf", type="pdf")
+            description = st.text_input("Description")
+            if st.button("Upload"):
+                if not upload_file:
+                    st.sidebar.error("Please upload a PDF file.")
+                elif not description:
+                    st.sidebar.error("Description is required.")
+                else:
+                    with st.spinner("⏳ Uploading file..."):
+                        try:
+                            # Prepare files and data
+                            files = {"file": (upload_file.name, upload_file, "application/pdf")}
+                            data = {"description": description}
 
-                        # Send POST request
-                        with httpx.Client(timeout=httpx.Timeout(200)) as client:
-                            response = client.post("http://localhost:8000/upload", files=files, data=data)
+                            # Send POST request
+                            with httpx.Client(timeout=httpx.Timeout(200)) as client:
+                                response = client.post("http://localhost:8000/upload", files=files, data=data)
 
-                        # Show response
+                            # Show response
+                            if response.status_code == 200:
+                                st.sidebar.success("✅ File uploaded successfully!")
+                            else:
+                                st.sidebar.error(f"❌ Upload failed: {response.status_code}")
+
+                        except Exception as e:
+                            st.sidebar.error(f"⚠️ Error: {e}")
+        st.title("Permission:")
+        with st.expander("Google OAuth", expanded=True):
+            oauth2 = OAuth2Component(
+                    client_id=os.getenv("CLIENT_ID"),
+                    client_secret=os.getenv("CLIENT_SECRET"),
+                    authorize_endpoint=cfg.GOOGLE_AUTHORIZE_URL,
+                    token_endpoint=cfg.GOOGLE_TOKEN_URL,
+                    refresh_token_endpoint=cfg.GOOGLE_REFRESH_TOKEN_URL
+                )
+            if "gmail_token" not in st.session_state:
+                try:
+                    with httpx.Client(timeout=httpx.Timeout(50)) as client:
+                        response = client.get(
+                            url = "http://localhost:8000/get-token"
+                        )
                         if response.status_code == 200:
-                            st.sidebar.success("✅ File uploaded successfully!")
-                        else:
-                            st.sidebar.error(f"❌ Upload failed: {response.status_code}")
+                            token = response.json()
+                            if token:
+                                st.session_state.gmail_token = oauth2.refresh_token( 
+                                    token=token,
+                                    force=False
+                                )
+                                st.success("✅ Gmail authorization successful!")
+                                st.rerun()
+                            else:
+                                raise Exception("no token available")
+                except Exception as e: 
+                    st.warning("⚠️ Please authorize Gmail access")
+                    # Show authorize button
+                    result = oauth2.authorize_button(
+                        name="🔐 Authorize Gmail",
+                        redirect_uri=cfg.REDIRECT_URI,
+                        scope=cfg.SCOPES,
+                        key="gmail_auth",
+                        use_container_width=True,
+                        extras_params={"prompt": "consent", "access_type": "offline"}
+                    )
+                    
+                    if result and 'token' in result:
+                        await connect_to_backend( 
+                            url = "http://localhost:8000/store-json",
+                            json_payload= result["token"]
+                        )
+                        st.session_state.gmail_token = result['token']
+                        st.rerun()
+            else:
+                st.success("✅ Gmail authorization successful!")
 
-                    except Exception as e:
-                        st.sidebar.error(f"⚠️ Error: {e}")
-        st.title("Chats")
-    
-        threads = await get_distinct_thread_ids()
+        with st.container():         
+            st.title("Chats")
+        
+            threads = await get_distinct_thread_ids()
 
-        for thread_id in threads:
-            display_msg = f"chat_{thread_id}"
-            with st.container():
-                if st.sidebar.button(display_msg, key=thread_id, use_container_width=True):
-                    st.session_state.thread_id = thread_id
-                    st.session_state.messages = []
-                    st.session_state.new_chat = False
-                    st.rerun()
+            for thread_id in threads:
+                display_msg = f"chat_{thread_id}"
+                with st.container():
+                    if st.sidebar.button(display_msg, key=thread_id, use_container_width=True):
+                        st.session_state.thread_id = thread_id
+                        st.session_state.messages = []
+                        st.session_state.new_chat = False
+                        st.rerun()
 
     
     if "new_chat" not in st.session_state:
