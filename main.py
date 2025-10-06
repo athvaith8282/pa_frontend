@@ -216,7 +216,6 @@ async def main():
                                 elif kind == "on_tool_start":
                                     # The event signals that a tool is about to be called
                                     with thoughts_placeholder:
-                                        print(f"*****{event['name']}*****")
                                         status_placeholder = st.empty()  # Placeholder to show the tool's status
                                         with status_placeholder.status("Calling Tool...", expanded=True) as s:
                                             st.write("Called ", event['name'])  # Show which tool is being called
@@ -228,7 +227,6 @@ async def main():
 
                                 elif kind == "on_tool_end":
                                     # The event signals the completion of a tool's execution
-                                    print(f"*****{event['name']}*****")
                                     with thoughts_placeholder:
                                         # We assume that `on_tool_end` comes after `on_tool_start`, meaning output_placeholder exists
                                         if 'output_placeholder' in locals():
