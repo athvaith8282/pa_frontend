@@ -71,7 +71,7 @@ async def main():
 
                             # Send POST request
                             with httpx.Client(timeout=httpx.Timeout(200)) as client:
-                                response = client.post("http://localhost:8000/upload", files=files, data=data)
+                                response = client.post("http://localhost:9000/upload", files=files, data=data)
 
                             # Show response
                             if response.status_code == 200:
@@ -94,7 +94,7 @@ async def main():
                 try:
                     with httpx.Client(timeout=httpx.Timeout(50)) as client:
                         response = client.get(
-                            url = "http://localhost:8000/get-token"
+                            url = "http://localhost:9000/get-token"
                         )
                         if response.status_code == 200:
                             token = response.json()
@@ -121,7 +121,7 @@ async def main():
                     
                     if result and 'token' in result:
                         await connect_to_backend( 
-                            url = "http://localhost:8000/store-json",
+                            url = "http://localhost:9000/store-json",
                             json_payload= result["token"]
                         )
                         st.session_state.gmail_token = result['token']
@@ -157,7 +157,7 @@ async def main():
             ]
         else:
             result = await connect_to_backend(
-                        url = "http://127.0.0.1:8000/history",
+                        url = "http://127.0.0.1:9000/history",
                         json_payload={
                             "thread_id": st.session_state.thread_id
                         }
@@ -194,7 +194,7 @@ async def main():
                 final_text = ""  # Will store the accumulated text from the model's response
                 async with httpx.AsyncClient(timeout=None) as client:
                     async with client.stream("POST", 
-                        "http://localhost:8000/stream", 
+                        "http://localhost:9000/stream", 
                         json={
                          "thread_id": st.session_state.thread_id,
                             "input": prompt
